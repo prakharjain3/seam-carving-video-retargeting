@@ -3,6 +3,7 @@ import numpy as np
 import argparse
 import os
 import logging
+from icecream import ic
 
 logging.basicConfig(filename='seam_carving.log', filemode='w', level=logging.INFO)
 
@@ -16,10 +17,10 @@ gray = None
 energy = None
 
 # dp matrx for seam calculation
-dp = np.zeros((MAXR, MAXC), dtype=int)
+dp = None
 
 # Store the direction of each cell
-dir = np.zeros((MAXR, MAXC), dtype=int)
+dir = None
 
 
 def average(x, y):
@@ -53,17 +54,21 @@ def calculate_energy(I):
 
 
 def remove_vertical(I, Xd):
-    global gray, energy, dp, dir
+    # global gray, energy, dp, dir
     X0 = I.shape[1]
     X = X0
     Y = I.shape[0]
+
+    # Reinitialize dp and dir with the correct size
+    dp = np.zeros((X, Y), dtype=int)
+    dir = np.zeros((X, Y), dtype=int)
 
     for k in range(X0 - Xd):
         logging.info(f"Removing vertical seam {k + 1}/{X0 - Xd}")
         gray = cv2.cvtColor(I, cv2.COLOR_BGR2GRAY)
         energy = calculate_energy(gray)
 
-        dp[:, 0] = energy[:, 0]
+        dp[:X, 0] = energy[0, :X]
 
         for y in range(1, Y):
             for x in range(X):
@@ -116,7 +121,6 @@ def remove_horizontal(I, Yd):
 
 
 def add_vertical(I, Xd):
-    global gray, energy, dp, dir
     I0 = I.copy()
     X0 = I.shape[1]
     X = X0
@@ -128,12 +132,15 @@ def add_vertical(I, Xd):
         for j in range(Y):
             pos[i, j] = i
 
+    dp = np.zeros((X, Y), dtype=int)
+    dir = np.zeros((X, Y), dtype=int)
+    
     for k in range(Xd - X0):
         logging.info(f"Adding vertical seam {k + 1}/{Xd - X0}")
         gray = cv2.cvtColor(I, cv2.COLOR_BGR2GRAY)
         energy = calculate_energy(gray)
 
-        dp[:, 0] = energy[:, 0]
+        dp[:X, 0] = energy[0, :X]
 
         for y in range(1, Y):
             for x in range(X):
@@ -217,6 +224,7 @@ def add_horizontal(I, Yd):
 
 
 def main():
+    global dp, dir
     parser = argparse.ArgumentParser(description="Image Seam Carving")
     parser.add_argument("-f", "--filename", help="Path to the input image")
     parser.add_argument("-dh", "--desired_height", type=int,
@@ -233,6 +241,11 @@ def main():
         exit(1)
 
     orig_h, orig_w = img.shape[:2]
+
+    if orig_h > MAXR or orig_w > MAXC:
+        logging.error(f"Image dimensions {orig_w}x{orig_h} exceed the maximum allowed size of {MAXC}x{MAXR}.")
+        exit(1)
+
     desired_h = args.desired_height
     desired_w = args.desired_width
 
