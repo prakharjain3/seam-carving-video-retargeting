@@ -2,6 +2,9 @@ import cv2
 import numpy as np
 import argparse
 import os
+import logging
+
+logging.basicConfig(filename='seam_carving.log', filemode='w', level=logging.INFO)
 
 
 # Maximum rows and cols of the image that can be dealt with
@@ -56,6 +59,7 @@ def remove_vertical(I, Xd):
     Y = I.shape[0]
 
     for k in range(X0 - Xd):
+        logging.info(f"Removing vertical seam {k + 1}/{X0 - Xd}")
         gray = cv2.cvtColor(I, cv2.COLOR_BGR2GRAY)
         energy = calculate_energy(gray)
 
@@ -125,6 +129,7 @@ def add_vertical(I, Xd):
             pos[i, j] = i
 
     for k in range(Xd - X0):
+        logging.info(f"Adding vertical seam {k + 1}/{Xd - X0}")
         gray = cv2.cvtColor(I, cv2.COLOR_BGR2GRAY)
         energy = calculate_energy(gray)
 
@@ -224,12 +229,15 @@ def main():
     img = cv2.imread(file)
 
     if img is None:
-        print("Unable to open image file.")
+        logging.error("Unable to open image file.")
         exit(1)
 
     orig_h, orig_w = img.shape[:2]
     desired_h = args.desired_height
     desired_w = args.desired_width
+
+    logging.info(f"Original height: {orig_h}, Original width: {orig_w}")
+    logging.info(f"Desired height: {desired_h}, Desired width: {desired_w}")
 
     dupImg = img.copy()
     if desired_h <= orig_h:
@@ -243,7 +251,10 @@ def main():
         dupImg = add_vertical(dupImg, desired_w)
 
     base_name, ext = os.path.splitext(file)
-    cv2.imwrite(f"{base_name}-result{ext}", dupImg)
+    output_file = f"{base_name}-result{ext}"
+    cv2.imwrite(output_file, dupImg)
+    
+    logging.info(f"Output image saved to {output_file}")
 
 
 if __name__ == "__main__":

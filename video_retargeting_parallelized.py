@@ -4,6 +4,10 @@ import networkx as nx
 from threading import Thread, Lock
 import argparse
 import os
+import logging
+
+logging.basicConfig(filename='seam_carving.log', filemode='w', level=logging.INFO)
+
 
 mutexLock = Lock()
 frameIter = 0
@@ -168,6 +172,8 @@ def reduce():
         frameIter += 1
         mutexLock.release()
 
+        logging.info(f"Processing frame {frameIter}/{maxFrames}")
+
         print(f"Frame {frameIter}/{maxFrames}", end="\n")
 
         frame1 = frames[frameId]
@@ -233,10 +239,10 @@ def main():
 
     cap = cv2.VideoCapture(inFile)
     if not cap.isOpened():
-        print("Unable to open input file.")
+        logging.error("Error opening video file.")
         return
 
-    print(f"Processing {inFile} with {numWorkers} workers...", end="\n\n")
+    logging.info(f"Processing {inFile} with {numWorkers} workers...")
 
     maxFrames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     origWid = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -258,7 +264,7 @@ def main():
     try:
         threads = [Thread(target=reduce) for _ in range(numWorkers)]
     except Exception as e:
-        print(f"Error creating threads: {e}")
+        logging.error(f"Error creating threads: {e}")
         exit(1)
 
     # start the threads
@@ -266,22 +272,22 @@ def main():
         try:
             thread.start()
         except Exception as e:
-            print(f"Error starting thread {thread}: {e}")
+            logging.error(f"Error starting thread {thread}: {e}")
             exit(1)
     for thread in threads:
         try:
             thread.join()
         except Exception as e:
-            print(f"Error joining thread {thread}: {e}")
+            logging.error(f"Error joining thread {thread}: {e}")
             exit(1)
     try:
         for frame in outFrames:
             if frame is not None:
                 output.write(frame)
             else:
-                print("Warning: Encountered a None frame while writing to output.")
+                logging.warning("Encountered a None frame while writing to output.")
     except Exception as e:
-        print(f"Error writing frames to output video: {e}")
+        logging.error(f"Error writing frame to output: {e}")
         exit(1)
 
 
