@@ -7,25 +7,8 @@ from icecream import ic
 
 logging.basicConfig(filename='seam_carving.log', filemode='w', level=logging.INFO)
 
-
-# Maximum rows and cols of the image that can be dealt with
-MAXR = 1500
-MAXC = 1500
-
-# Gray image and energy map of the image
-gray = None
-energy = None
-
-# dp matrx for seam calculation
-dp = None
-
-# Store the direction of each cell
-dir = None
-
-
 def average(x, y):
     return (x + y) // 2
-
 
 def calculate_energy(I):
     Y, X = I.shape
@@ -114,6 +97,7 @@ def remove_vertical(I, Xd):
 
 
 def remove_horizontal(I, Yd):
+    logging.info(f"Removing horizontal seam {I.shape[0] - Yd}")
     I = cv2.transpose(I)
     I = remove_vertical(I, Yd)
     I = cv2.transpose(I)
@@ -217,6 +201,7 @@ def add_vertical(I, Xd):
 
 
 def add_horizontal(I, Yd):
+    logging.info(f"Adding horizontal seam {Yd - I.shape[0]}")
     I = cv2.transpose(I)
     I = add_vertical(I, Yd)
     I = cv2.transpose(I)
@@ -224,7 +209,6 @@ def add_horizontal(I, Yd):
 
 
 def main():
-    global dp, dir
     parser = argparse.ArgumentParser(description="Image Seam Carving")
     parser.add_argument("-f", "--filename", help="Path to the input image")
     parser.add_argument("-dh", "--desired_height", type=int,
@@ -242,15 +226,11 @@ def main():
 
     orig_h, orig_w = img.shape[:2]
 
-    if orig_h > MAXR or orig_w > MAXC:
-        logging.error(f"Image dimensions {orig_w}x{orig_h} exceed the maximum allowed size of {MAXC}x{MAXR}.")
-        exit(1)
-
     desired_h = args.desired_height
     desired_w = args.desired_width
 
-    logging.info(f"Original height: {orig_h}, Original width: {orig_w}")
-    logging.info(f"Desired height: {desired_h}, Desired width: {desired_w}")
+    logging.info(f"Original Height: {orig_h} | Original Width: {orig_w}")
+    logging.info(f"Desired Height: {desired_h} | Desired Width: {desired_w}")
 
     dupImg = img.copy()
     if desired_h <= orig_h:
