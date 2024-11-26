@@ -42,14 +42,18 @@ def remove_seam_gray(gray_image, seam):
     return reduced_image
 
 
+import numpy as np
+import networkx as nx
+
+
 def find_seam(gray_img1, gray_img2, gray_img3, gray_img4, gray_img5):
     rows, cols = gray_img1.shape
-    seam = np.zeros(rows, dtype=int)
 
     # Constants
     a1, a2, a3, a4, a5 = 0.2, 0.2, 0.2, 0.2, 0.2
+    inf = float("inf")
 
-    # Energy calculation (simplified version)
+    # Energy map combining the inputs
     energy = (
         a1 * gray_img1
         + a2 * gray_img2
@@ -58,8 +62,42 @@ def find_seam(gray_img1, gray_img2, gray_img3, gray_img4, gray_img5):
         + a5 * gray_img5
     )
 
+    # Create a directed graph
+    G = nx.DiGraph()
+
+    # Adding nodes and edges
     for i in range(rows):
-        seam[i] = np.argmin(energy[i, :])
+        for j in range(cols):
+            node = (i, j)
+
+            # Add edges to the next row
+            if i < rows - 1:
+                # Down
+                G.add_edge(node, (i + 1, j), weight=energy[i, j])
+                # Down-left
+                if j > 0:
+                    G.add_edge(node, (i + 1, j - 1), weight=energy[i, j])
+                # Down-right
+                if j < cols - 1:
+                    G.add_edge(node, (i + 1, j + 1), weight=energy[i, j])
+
+            # Add source and sink connections
+            if i == 0:
+                G.add_edge("source", node, weight=energy[i, j])
+            if i == rows - 1:
+                G.add_edge(node, "sink", weight=energy[i, j])
+
+    # Compute the max flow (min cut) between source and sink
+    flow_value, partition = nx.minimum_cut(G, "source", "sink", capacity="weight")
+    reachable, non_reachable = partition
+
+    # Extract the seam from the partition
+    seam = np.zeros(rows, dtype=int)
+    for i in range(rows):
+        for j in range(cols):
+            if (i, j) in reachable:
+                seam[i] = j
+                break
 
     return seam
 
@@ -158,7 +196,7 @@ if __name__ == "__main__":
     orig_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     fps = cap.get(cv2.CAP_PROP_FPS)
 
-    out_file = in_file.split(".")[0] + "-result.avi"
+    out_file = in_file.split(".")[0] + "_result.avi"
     fourcc = cv2.VideoWriter_fourcc(*"XVID")
 
     frames = []
