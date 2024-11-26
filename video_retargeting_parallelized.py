@@ -1,149 +1,40 @@
 import cv2
 import numpy as np
-import networkx as nx
-from threading import Thread, Lock
-import argparse
+import threading
+import sys
+import maxflow
 import os
-import logging
 
-logging.basicConfig(filename='seam_carving.log', filemode='w', level=logging.INFO)
-
-
-mutexLock = Lock()
-frameIter = 0
-maxFrames = 0
-frames = []
-outFrames = []
+# Global variables
 ver = 1
 hor = 0
+frame_iter = 0
+max_frames = 0
+frames = []
+out_frames = []
+mutex_lock = threading.Lock()
 
 
-def reduce_frame(frame1, frame2, frame3, frame4, frame5, v, h):
-    grayImg1 = cv2.cvtColor(frame1, cv2.COLOR_BGR2GRAY)
-    grayImg2 = cv2.cvtColor(frame2, cv2.COLOR_BGR2GRAY)
-    grayImg3 = cv2.cvtColor(frame3, cv2.COLOR_BGR2GRAY)
-    grayImg4 = cv2.cvtColor(frame4, cv2.COLOR_BGR2GRAY)
-    grayImg5 = cv2.cvtColor(frame5, cv2.COLOR_BGR2GRAY)
-
-    min_val = min(v, h)
-    diff = abs(v - h)
-
-    for _ in range(min_val):
-        frame1 = reduce_vertical(
-            grayImg1, grayImg2, grayImg3, grayImg4, grayImg5, frame1)
-        frame1 = reduce_horizontal(
-            grayImg1, grayImg2, grayImg3, grayImg4, grayImg5, frame1)
-
-    reduce_func = reduce_horizontal if h > v else reduce_vertical
-    for _ in range(diff):
-        frame1 = reduce_func(grayImg1, grayImg2, grayImg3,
-                             grayImg4, grayImg5, frame1)
-
-    # you can write the above code like this too
-    # if h > v:
-    #     for _ in range(diff):
-    #         frame1 = reduce_horizontal(grayImg1, grayImg2, grayImg3, grayImg4, grayImg5, frame1)
-    # else:
-    #     for _ in range(diff):
-    #         frame1 = reduce_vertical(grayImg1, grayImg2, grayImg3, grayImg4, grayImg5, frame1)
-
-    return frame1
-
-
-def reduce_vertical(grayImg1, grayImg2, grayImg3, grayImg4, grayImg5, img):
-    seam = find_seam(grayImg1, grayImg2, grayImg3, grayImg4, grayImg5)
-    img = remove_seam(img, seam)
-    grayImg1 = remove_seam_gray(grayImg1, seam)
-    grayImg2 = remove_seam_gray(grayImg2, seam)
-    grayImg3 = remove_seam_gray(grayImg3, seam)
-    grayImg4 = remove_seam_gray(grayImg4, seam)
-    grayImg5 = remove_seam_gray(grayImg5, seam)
-    return img
-
-
-def reduce_horizontal(grayImg1, grayImg2, grayImg3, grayImg4, grayImg5, img):
-    seam = find_seam(grayImg1.T, grayImg2.T,
-                     grayImg3.T, grayImg4.T, grayImg5.T)
-    img = remove_seam(img.T, seam)
-    grayImg1 = remove_seam_gray(grayImg1.T, seam).T
-    grayImg2 = remove_seam_gray(grayImg2.T, seam).T
-    grayImg3 = remove_seam_gray(grayImg3.T, seam).T
-    grayImg4 = remove_seam_gray(grayImg4.T, seam).T
-    grayImg5 = remove_seam_gray(grayImg5.T, seam).T
-    return img.T
-
-
-def find_seam(grayImg1, grayImg2, grayImg3, grayImg4, grayImg5):
-    rows, cols = grayImg1.shape
-    g = nx.DiGraph()
-
-    inf = float('inf')
-    a1, a2, a3, a4, a5 = 0.2, 0.2, 0.2, 0.2, 0.2
-
-    for i in range(rows):
-        for j in range(cols):
-            if j == 0:
-                g.add_edge('s', (i, j), capacity=inf)
-            if j == cols - 1:
-                g.add_edge((i, j), 't', capacity=inf)
-
-            if j == 0:
-                LR = a1 * grayImg1[i, j+1] + a2 * grayImg2[i, j+1] + a3 * \
-                    grayImg3[i, j+1] + a4 * \
-                    grayImg4[i, j+1] + a5 * grayImg5[i, j+1]
-                g.add_edge((i, j), (i, j + 1), capacity=LR)
-                g.add_edge((i, j + 1), (i, j), capacity=inf)
-
-            elif j != cols - 1:
-                LR = a1 * abs(grayImg1[i, j + 1] - grayImg1[i, j - 1]) + a2 * abs(grayImg2[i, j + 1] - grayImg2[i, j - 1]) + a3 * abs(
-                    grayImg3[i, j + 1] - grayImg3[i, j - 1]) + a4 * abs(grayImg4[i, j + 1] - grayImg4[i, j - 1]) + a5 * abs(grayImg5[i, j + 1] - grayImg5[i, j - 1])
-                g.add_edge((i, j), (i, j + 1), capacity=LR)
-                g.add_edge((i, j + 1), (i, j), capacity=inf)
-
-            if i != rows - 1:
-
-                if j == 0:
-                    posLU = a1 * grayImg1[i, j] + a2 * grayImg2[i, j] + a3 * \
-                        grayImg3[i, j] + a4 * \
-                        grayImg4[i, j] + a5 * grayImg5[i, j]
-                    negLU = a1 * grayImg1[i + 1, j] + a2 * grayImg2[i + 1, j] + a3 * \
-                        grayImg3[i + 1, j] + a4 * \
-                        grayImg4[i + 1, j] + a5 * grayImg5[i + 1, j]
-                    g.add_edge((i, j), (i + 1, j), capacity=negLU)
-                    g.add_edge((i + 1, j), (i, j), capacity=negLU)
-                else:
-                    posLU = a1 * abs(grayImg1[i, j] - grayImg1[i + 1, j - 1]) + a2 * abs(grayImg2[i, j] - grayImg2[i + 1, j - 1]) + a3 * abs(
-                        grayImg3[i, j] - grayImg3[i + 1, j - 1]) + a4 * abs(grayImg4[i, j] - grayImg4[i + 1, j - 1]) + a5 * abs(grayImg5[i, j] - grayImg5[i + 1, j - 1])
-                    negLU = a1 * abs(grayImg1[i + 1, j] - grayImg1[i, j - 1]) + a2 * abs(grayImg2[i + 1, j] - grayImg2[i, j - 1]) + a3 * abs(
-                        grayImg3[i + 1, j] - grayImg3[i, j - 1]) + a4 * abs(grayImg4[i + 1, j] - grayImg4[i, j - 1]) + a5 * abs(grayImg5[i + 1, j] - grayImg5[i, j - 1])
-                    g.add_edge((i, j), (i + 1, j - 1), capacity=negLU)
-                    g.add_edge((i, j), (i + 1, j), capacity=posLU)
-            if i != 0 and j != 0:
-                g.add_edge((i, j), (i - 1, j - 1), capacity=inf)
-            if i != rows - 1 and j != 0:
-                g.add_edge((i, j), (i + 1, j - 1), capacity=inf)
-
-    flow_value, flow_dict = nx.maximum_flow(g, 's', 't')
-    seam = np.zeros(rows, dtype=int)
-    for i in range(rows):
-        for j in range(cols):
-            if flow_dict['s'][(i, j)] == 0:
-                seam[i] = j - 1
-                break
-            if j == cols - 1 and flow_dict[(i, j)]['t'] == 0:
-                seam[i] = cols - 1
-    return seam
+def usage():
+    print(
+        "Usage: heuristic5 <filename> <vertical cuts> <horizontal cuts> <# of workers>"
+    )
+    sys.exit(1)
 
 
 def remove_seam(image, seam):
-    nrows, ncols, _ = image.shape
-    reduced_image = np.zeros((nrows, ncols - 1, 3), dtype=np.uint8)
+    # Support both grayscale and RGB images
+    nrows, ncols = image.shape[:2]  # Get rows and columns only
+    if len(image.shape) == 3:  # RGB image
+        reduced_image = np.zeros((nrows, ncols - 1, image.shape[2]), dtype=image.dtype)
+    else:  # Grayscale image
+        reduced_image = np.zeros((nrows, ncols - 1), dtype=image.dtype)
 
     for i in range(nrows):
         if seam[i] != 0:
-            reduced_image[i, :seam[i]] = image[i, :seam[i]]
+            reduced_image[i, : seam[i]] = image[i, : seam[i]]
         if seam[i] != ncols - 1:
-            reduced_image[i, seam[i]:] = image[i, seam[i] + 1:]
+            reduced_image[i, seam[i] :] = image[i, seam[i] + 1 :]
 
     return reduced_image
 
@@ -154,141 +45,168 @@ def remove_seam_gray(gray_image, seam):
 
     for i in range(nrows):
         if seam[i] != 0:
-            reduced_image[i, :seam[i]] = gray_image[i, :seam[i]]
+            reduced_image[i, : seam[i]] = gray_image[i, : seam[i]]
         if seam[i] != ncols - 1:
-            reduced_image[i, seam[i]:] = gray_image[i, seam[i] + 1:]
+            reduced_image[i, seam[i] :] = gray_image[i, seam[i] + 1 :]
 
     return reduced_image
 
 
-def reduce():
-    global frameIter
+import maxflow
+
+
+def find_seam(gray_img1, gray_img2, gray_img3, gray_img4, gray_img5):
+    rows, cols = gray_img1.shape
+    inf = 100000
+    seam = np.zeros(rows, dtype=int)
+    a1, a2, a3, a4, a5 = 0.2, 0.2, 0.2, 0.2, 0.2
+
+    # Initialize graph
+    g = maxflow.Graph[float]()
+    node_ids = g.add_nodes(rows * cols)
+
+    # Add edges to the graph
+    for i in range(rows):
+        for j in range(cols):
+            node_index = i * cols + j
+            if j == 0:  # Leftmost column
+                g.add_tedge(node_index, inf, 0)  # Source edge
+            elif j == cols - 1:  # Rightmost column
+                g.add_tedge(node_index, 0, inf)  # Sink edge
+            else:
+                LR1 = gray_img1[i, j + 1] if j < cols - 1 else 0
+                LR2 = gray_img2[i, j + 1] if j < cols - 1 else 0
+                LR3 = gray_img3[i, j + 1] if j < cols - 1 else 0
+                LR4 = gray_img4[i, j + 1] if j < cols - 1 else 0
+                LR5 = gray_img5[i, j + 1] if j < cols - 1 else 0
+                LR = a1 * LR1 + a2 * LR2 + a3 * LR3 + a4 * LR4 + a5 * LR5
+
+                # Add edge between adjacent pixels
+                if i < rows - 1:
+                    g.add_edge(node_index, (i + 1) * cols + j, LR, inf)
+
+    # Compute the maximum flow
+    flow = g.maxflow()
+
+    # Extract the seam from the graph
+    for i in range(rows):
+        for j in range(cols):
+            if g.get_segment(i * cols + j) == 1:  # Part of the seam
+                seam[i] = j
+                break
+
+    return seam
+
+
+def reduce_vertical(gray_img1, gray_img2, gray_img3, gray_img4, gray_img5, img):
+    seam = find_seam(gray_img1, gray_img2, gray_img3, gray_img4, gray_img5)
+    return remove_seam(img, seam)
+
+
+def reduce_horizontal(gray_img1, gray_img2, gray_img3, gray_img4, gray_img5, img):
+    # Similar to vertical but operating on rows instead of columns.
+    seam = find_seam(gray_img1.T, gray_img2.T, gray_img3.T, gray_img4.T, gray_img5.T)
+    return remove_seam(img.T, seam).T
+
+
+def reduce_frame(frame1, frame2, frame3, frame4, frame5, v, h):
+    gray1 = cv2.cvtColor(frame1, cv2.COLOR_BGR2GRAY)
+    gray2 = cv2.cvtColor(frame2, cv2.COLOR_BGR2GRAY)
+    gray3 = cv2.cvtColor(frame3, cv2.COLOR_BGR2GRAY)
+    gray4 = cv2.cvtColor(frame4, cv2.COLOR_BGR2GRAY)
+    gray5 = cv2.cvtColor(frame5, cv2.COLOR_BGR2GRAY)
+
+    if v > 0:
+        frame1 = reduce_vertical(gray1, gray2, gray3, gray4, gray5, frame1)
+        frame2 = reduce_vertical(gray1, gray2, gray3, gray4, gray5, frame2)
+        frame3 = reduce_vertical(gray1, gray2, gray3, gray4, gray5, frame3)
+        frame4 = reduce_vertical(gray1, gray2, gray3, gray4, gray5, frame4)
+        frame5 = reduce_vertical(gray1, gray2, gray3, gray4, gray5, frame5)
+
+    if h > 0:
+        frame1 = reduce_horizontal(gray1, gray2, gray3, gray4, gray5, frame1)
+        frame2 = reduce_horizontal(gray1, gray2, gray3, gray4, gray5, frame2)
+        frame3 = reduce_horizontal(gray1, gray2, gray3, gray4, gray5, frame3)
+        frame4 = reduce_horizontal(gray1, gray2, gray3, gray4, gray5, frame4)
+        frame5 = reduce_horizontal(gray1, gray2, gray3, gray4, gray5, frame5)
+
+    return frame1
+
+
+def worker_thread():
+    global frame_iter
     while True:
-        mutexLock.acquire()
-        if frameIter >= maxFrames:
-            mutexLock.release()
-            return
-        frameId = frameIter
-        frameIter += 1
-        mutexLock.release()
+        with mutex_lock:
+            if frame_iter >= max_frames:
+                return
+            frame_id = frame_iter
+            frame_iter += 1
 
-        logging.info(f"Processing frame {frameIter}/{maxFrames}")
+        print(f"Frame {frame_iter}/{max_frames}")
 
-        print(f"Frame {frameIter}/{maxFrames}", end="\n")
-
-        frame1 = frames[frameId]
-
-        # Check if we are close to the end of the video and select the next frames accordingly
-        if frameId < maxFrames - 4:
-            frame2 = frames[frameId + 1]
-            frame3 = frames[frameId + 2]
-            frame4 = frames[frameId + 3]
-            frame5 = frames[frameId + 4]
-        elif frameId < maxFrames - 3:
-            frame2 = frames[frameId + 1]
-            frame3 = frames[frameId + 2]
-            frame4 = frames[frameId + 3]
-            frame5 = frame4
-        elif frameId < maxFrames - 2:
-            frame2 = frames[frameId + 1]
-            frame3 = frames[frameId + 2]
-            frame4 = frame3
-            frame5 = frame3
-        elif frameId < maxFrames - 1:
-            frame2 = frames[frameId + 1]
-            frame3 = frame2
-            frame4 = frame2
-            frame5 = frame2
+        frame1 = frames[frame_id]
+        if frame_id < max_frames - 4:
+            frame2 = frames[frame_id + 1]
+            frame3 = frames[frame_id + 2]
+            frame4 = frames[frame_id + 3]
+            frame5 = frames[frame_id + 4]
         else:
-            frame2 = frame1
-            frame3 = frame1
-            frame4 = frame1
-            frame5 = frame1
+            frame2 = frame3 = frame4 = frame5 = frame1
 
-        outFrames[frameId] = reduce_frame(
-            frame1, frame2, frame3, frame4, frame5, ver, hor)
-
-# check to ensure that the number of workers is a positive integer
-
-
-def positive_int(value):
-    ivalue = int(value)
-    if ivalue < 1:
-        raise argparse.ArgumentTypeError(f"Invalid number of workers: {
-                                         value}. Must be at least 1.")
-    return ivalue
+        out_frames[frame_id] = reduce_frame(
+            frame1, frame2, frame3, frame4, frame5, ver, hor
+        )
+        output_dir = "output_frames"
+        # os.makedirs(output_dir, exist_ok=True)
+        frame_number = frame_iter
+        cv2.imwrite(f"{output_dir}/frame_{frame_number:04d}.png", out_frames[frame_id])
 
 
 def main():
-    global frames, outFrames, maxFrames, ver, hor
+    global frames, out_frames, max_frames
+    print(sys.argv)
+    if len(sys.argv) == 6:
+        in_file = sys.argv[2]
+        ver = int(sys.argv[3])
+        hor = int(sys.argv[4])
+        num_workers = int(sys.argv[5])
+    else:
+        usage()
 
-    parser = argparse.ArgumentParser(description='Seam Carving Video Resizer')
-    parser.add_argument('-f', '--filename', type=str, help='Input video file')
-    parser.add_argument('-vc', '--vertical_cuts', type=int,
-                        help='Number of vertical seams to remove')
-    parser.add_argument('-hc', '--horizontal_cuts', type=int,
-                        help='Number of horizontal seams to remove')
-    parser.add_argument('-nw', '--num_workers',
-                        type=positive_int, help='Number of worker threads')
-    args = parser.parse_args()
-
-    inFile = args.filename
-    ver = args.vertical_cuts
-    hor = args.horizontal_cuts
-    numWorkers = args.num_workers
-
-    cap = cv2.VideoCapture(inFile)
+    cap = cv2.VideoCapture(in_file)
     if not cap.isOpened():
-        logging.error("Error opening video file.")
-        return
+        print("Error: Unable to open video file.")
+        sys.exit(1)
 
-    logging.info(f"Processing {inFile} with {numWorkers} workers...")
+    max_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    orig_wid = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    orig_hei = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
-    maxFrames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    origWid = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    origHei = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    size = (orig_wid - ver, orig_hei - hor)
+    # out_file = in_file.split(".")[0] + "-result.mov"
+    # Update output file extension to MP4
+    out_file = in_file.split(".")[0] + "-result.mp4"
 
-    S = (origWid - ver, origHei - hor)
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    output = cv2.VideoWriter(out_file, fourcc, cap.get(cv2.CAP_PROP_FPS), size)
 
-    basename, ext = os.path.splitext(inFile)
-    outFile = f"{basename}-result{ext}"
-
-    output = cv2.VideoWriter(filename=outFile, fourcc=cv2.VideoWriter_fourcc(
-        *'mp4v'), fps=cap.get(cv2.CAP_PROP_FPS), frameSize=S, isColor=True)
-
-    frames = [cap.read()[1] for _ in range(maxFrames)]
-    outFrames = [None] * maxFrames
+    frames = [cap.read()[1] for _ in range(max_frames)]
+    out_frames = [None] * max_frames
 
     threads = []
+    for _ in range(num_workers):
+        thread = threading.Thread(target=worker_thread)
+        threads.append(thread)
+        thread.start()
 
-    try:
-        threads = [Thread(target=reduce) for _ in range(numWorkers)]
-    except Exception as e:
-        logging.error(f"Error creating threads: {e}")
-        exit(1)
+    for thread in threads:
+        thread.join()
 
-    # start the threads
-    for thread in threads:
-        try:
-            thread.start()
-        except Exception as e:
-            logging.error(f"Error starting thread {thread}: {e}")
-            exit(1)
-    for thread in threads:
-        try:
-            thread.join()
-        except Exception as e:
-            logging.error(f"Error joining thread {thread}: {e}")
-            exit(1)
-    try:
-        for frame in outFrames:
-            if frame is not None:
-                output.write(frame)
-            else:
-                logging.warning("Encountered a None frame while writing to output.")
-    except Exception as e:
-        logging.error(f"Error writing frame to output: {e}")
-        exit(1)
+    for i in range(max_frames):
+        output.write(out_frames[i])
+
+    cap.release()
+    output.release()
 
 
 if __name__ == "__main__":

@@ -5,10 +5,12 @@ import os
 import logging
 from icecream import ic
 
-logging.basicConfig(filename='seam_carving.log', filemode='w', level=logging.INFO)
+logging.basicConfig(filename="seam_carving.log", filemode="w", level=logging.INFO)
+
 
 def average(x, y):
     return (x + y) // 2
+
 
 def calculate_energy(I):
     Y, X = I.shape
@@ -41,6 +43,9 @@ def remove_vertical(I, Xd):
     X0 = I.shape[1]
     X = X0
     Y = I.shape[0]
+    # print(f"pixel shape: {I[0, 0].shape}")
+    if I.shape[-1] == 4:  # Check for RGBA
+        I = cv2.cvtColor(I, cv2.COLOR_BGRA2BGR)
 
     # Reinitialize dp and dir with the correct size
     dp = np.zeros((X, Y), dtype=int)
@@ -118,7 +123,7 @@ def add_vertical(I, Xd):
 
     dp = np.zeros((X, Y), dtype=int)
     dir = np.zeros((X, Y), dtype=int)
-    
+
     for k in range(Xd - X0):
         logging.info(f"Adding vertical seam {k + 1}/{Xd - X0}")
         gray = cv2.cvtColor(I, cv2.COLOR_BGR2GRAY)
@@ -177,8 +182,15 @@ def add_vertical(I, Xd):
         for j in range(X0):
             if mark[i, j]:
 
-                aux = average(I0[i, j], I0[i, j + 1]) if j == 0 else (average(
-                    I0[i, j], I0[i, j - 1]) if j == X0 - 1 else average(I0[i, j - 1], I0[i, j + 1]))
+                aux = (
+                    average(I0[i, j], I0[i, j + 1])
+                    if j == 0
+                    else (
+                        average(I0[i, j], I0[i, j - 1])
+                        if j == X0 - 1
+                        else average(I0[i, j - 1], I0[i, j + 1])
+                    )
+                )
 
                 # the above line is equivalent to the following code
                 # if j == 0:
@@ -211,10 +223,12 @@ def add_horizontal(I, Yd):
 def main():
     parser = argparse.ArgumentParser(description="Image Seam Carving")
     parser.add_argument("-f", "--filename", help="Path to the input image")
-    parser.add_argument("-dh", "--desired_height", type=int,
-                        help="Desired height of the output image")
-    parser.add_argument("-dw", "--desired_width", type=int,
-                        help="Desired width of the output image")
+    parser.add_argument(
+        "-dh", "--desired_height", type=int, help="Desired height of the output image"
+    )
+    parser.add_argument(
+        "-dw", "--desired_width", type=int, help="Desired width of the output image"
+    )
     args = parser.parse_args()
 
     file = args.filename
@@ -244,9 +258,9 @@ def main():
         dupImg = add_vertical(dupImg, desired_w)
 
     base_name, ext = os.path.splitext(file)
-    output_file = f"{base_name}-result{ext}"
+    output_file = f"results/{base_name}-result{ext}"
     cv2.imwrite(output_file, dupImg)
-    
+
     logging.info(f"Output image saved to {output_file}")
 
 
