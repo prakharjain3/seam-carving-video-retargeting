@@ -1,5 +1,9 @@
 import cv2
 import numpy as np
+import concurrent.futures
+import os
+from glob import glob
+import networkx as nx
 
 
 def usage():
@@ -40,10 +44,6 @@ def remove_seam_gray(gray_image, seam):
             reduced_image[i, seam[i] :] = gray_image[i, seam[i] + 1 :]
 
     return reduced_image
-
-
-import numpy as np
-import networkx as nx
 
 
 def find_seam(gray_img1, gray_img2, gray_img3, gray_img4, gray_img5):
@@ -147,10 +147,6 @@ def reduce_frame(frame1, frame2, frame3, frame4, frame5, v, h):
     return img
 
 
-import os
-from glob import glob
-
-
 def create_video_from_images(image_dir, output_file, fps=30):
     # Get all images in the directory, sorted by file name
     images = sorted(glob(os.path.join(image_dir, "*.png")))
@@ -175,16 +171,29 @@ def create_video_from_images(image_dir, output_file, fps=30):
     print(f"Video saved as {output_file}")
 
 
+def process_frame(args):
+    frames, frame_id, max_frames, v, h = args
+    frame1 = frames[frame_id]
+    frame2 = frames[frame_id + 1] if frame_id + 1 < max_frames else frame1
+    frame3 = frames[frame_id + 2] if frame_id + 2 < max_frames else frame2
+    frame4 = frames[frame_id + 3] if frame_id + 3 < max_frames else frame3
+    frame5 = frames[frame_id + 4] if frame_id + 4 < max_frames else frame4
+
+    print(f"Processing frame {frame_id + 1}/{max_frames}...")
+    return reduce_frame(frame1, frame2, frame3, frame4, frame5, v, h)
+
+
 if __name__ == "__main__":
     import sys
 
-    if len(sys.argv) != 4:
+    if len(sys.argv) != 5:
         usage()
         sys.exit(-1)
 
     in_file = sys.argv[1]
     ver = int(sys.argv[2])
     hor = int(sys.argv[3])
+    num_workers = int(sys.argv[4])
 
     cap = cv2.VideoCapture(in_file)
     if not cap.isOpened():
@@ -205,23 +214,28 @@ if __name__ == "__main__":
         if not ret:
             break
         frames.append(frame)
+    cap.release()
 
-    out_frames = []
-    for i in range(max_frames):
-        frame1 = frames[i]
-        frame2 = frames[i + 1] if i + 1 < max_frames else frame1
-        frame3 = frames[i + 2] if i + 2 < max_frames else frame2
-        frame4 = frames[i + 3] if i + 3 < max_frames else frame3
-        frame5 = frames[i + 4] if i + 4 < max_frames else frame4
-        print(f"Processing frame {i+1}/{max_frames}...")
+    # out_frames = []
+    # for i in range(max_frames):
+    #     frame1 = frames[i]
+    #     frame2 = frames[i + 1] if i + 1 < max_frames else frame1
+    #     frame3 = frames[i + 2] if i + 2 < max_frames else frame2
+    #     frame4 = frames[i + 3] if i + 3 < max_frames else frame3
+    #     frame5 = frames[i + 4] if i + 4 < max_frames else frame4
+    #     print(f"Processing frame {i+1}/{max_frames}...")
 
-        out_frame = reduce_frame(frame1, frame2, frame3, frame4, frame5, ver, hor)
-        # output_dir = "output_frames"
-        # os.makedirs(output_dir, exist_ok=True)
-        # frame_number = i
-        # cv2.imwrite(f"{output_dir}/frame_{frame_number:04d}.png", out_frame)
+    #     out_frame = reduce_frame(frame1, frame2, frame3, frame4, frame5, ver, hor)
+    # output_dir = "output_frames"
+    # os.makedirs(output_dir, exist_ok=True)
+    # frame_number = i
+    # cv2.imwrite(f"{output_dir}/frame_{frame_number:04d}.png", out_frame)
 
-        out_frames.append(out_frame)
+    # out_frames.append(out_frame)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
+        args = [(frames, i, max_frames, ver, hor) for i in range(max_frames)]
+        out_frames = list(executor.map(process_frame, args))
+
     output = cv2.VideoWriter(
         out_file, fourcc, fps, (orig_width - ver, orig_height - hor)
     )
@@ -229,7 +243,6 @@ if __name__ == "__main__":
     for out_frame in out_frames:
         output.write(out_frame)
 
-    cap.release()
     output.release()
     # image_directory = "output_frames"  # Path to directory containing images
     # output_video = "output_video.avi"  # Desired output video file name
