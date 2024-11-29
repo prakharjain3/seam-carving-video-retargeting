@@ -4,11 +4,21 @@ import concurrent.futures
 import os
 from glob import glob
 import networkx as nx
+import argparse
+from icecream import ic
+import logging
+
+logging.basicConfig(
+    filename="seam_carving.log",
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    filemode="w",
+    level=logging.INFO,
+)
 
 
 def usage():
     print(
-        "Usage:python3 sequential_video.py <filename> <vertical cuts> <horizontal cuts>"
+        "Usage:python3 parallelized_seam_carving_video.py -f=<filename> -dh=<desired height> -dw=<desired width> -nw=<num workers> -o=<output file>"
     )
 
 
@@ -152,7 +162,7 @@ def create_video_from_images(image_dir, output_file, fps=30):
     images = sorted(glob(os.path.join(image_dir, "*.png")))
 
     if not images:
-        print("No images found in the directory.")
+        logging.error("No images found in the directory.")
         return
 
     # Read the first image to get dimensions
@@ -168,7 +178,7 @@ def create_video_from_images(image_dir, output_file, fps=30):
         video.write(img)
 
     video.release()
-    print(f"Video saved as {output_file}")
+    logging.info(f"Video saved as {output_file}")
 
 
 def process_frame(args):
@@ -179,35 +189,26 @@ def process_frame(args):
     frame4 = frames[frame_id + 3] if frame_id + 3 < max_frames else frame3
     frame5 = frames[frame_id + 4] if frame_id + 4 < max_frames else frame4
 
-    print(f"Processing frame {frame_id + 1}/{max_frames}...")
+    # print(f"Processing frame {frame_id + 1}/{max_frames}...")
+    logging.info(f"Processing frame {frame_id + 1}/{max_frames}...")
     return reduce_frame(frame1, frame2, frame3, frame4, frame5, v, h)
 
 
-if __name__ == "__main__":
-    import sys
-
-    if len(sys.argv) != 5:
-        usage()
-        sys.exit(-1)
-
-    in_file = sys.argv[1]
-    ver = int(sys.argv[2])
-    hor = int(sys.argv[3])
-    num_workers = int(sys.argv[4])
-
+def initialize_video_capture(in_file):
     cap = cv2.VideoCapture(in_file)
     if not cap.isOpened():
-        print("Unable to open input file.")
-        sys.exit(-1)
+        logging.error("Unable to open input file.")
+        return None, None, None, None, None
 
     max_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     orig_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     orig_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     fps = cap.get(cv2.CAP_PROP_FPS)
 
-    out_file = in_file.split(".")[0] + "_result.avi"
-    fourcc = cv2.VideoWriter_fourcc(*"XVID")
+    return cap, max_frames, orig_width, orig_height, fps
 
+
+def extract_frames(cap, max_frames):
     frames = []
     for _ in range(max_frames):
         ret, frame = cap.read()
@@ -215,38 +216,85 @@ if __name__ == "__main__":
             break
         frames.append(frame)
     cap.release()
+    if not frames:
+        logging.error("No frames extracted from video.")
+        return None
+    return frames
 
-    # out_frames = []
-    # for i in range(max_frames):
-    #     frame1 = frames[i]
-    #     frame2 = frames[i + 1] if i + 1 < max_frames else frame1
-    #     frame3 = frames[i + 2] if i + 2 < max_frames else frame2
-    #     frame4 = frames[i + 3] if i + 3 < max_frames else frame3
-    #     frame5 = frames[i + 4] if i + 4 < max_frames else frame4
-    #     print(f"Processing frame {i+1}/{max_frames}...")
 
-    #     out_frame = reduce_frame(frame1, frame2, frame3, frame4, frame5, ver, hor)
-    # output_dir = "output_frames"
-    # os.makedirs(output_dir, exist_ok=True)
-    # frame_number = i
-    # cv2.imwrite(f"{output_dir}/frame_{frame_number:04d}.png", out_frame)
-
-    # out_frames.append(out_frame)
+def process_video(frames, max_frames, orig_width, orig_height, ver, hor, num_workers):
     with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
         args = [(frames, i, max_frames, ver, hor) for i in range(max_frames)]
         out_frames = list(executor.map(process_frame, args))
 
+    return out_frames
+
+
+def save_output_video(out_frames, out_file, fps, orig_width, orig_height, ver, hor):
     output = cv2.VideoWriter(
-        out_file, fourcc, fps, (orig_width - ver, orig_height - hor)
+        out_file,
+        cv2.VideoWriter_fourcc(*"XVID"),
+        fps,
+        (orig_width - ver, orig_height - hor),
     )
 
     for out_frame in out_frames:
         output.write(out_frame)
 
     output.release()
-    # image_directory = "output_frames"  # Path to directory containing images
-    # output_video = "output_video.avi"  # Desired output video file name
+    logging.info(f"Output file saved as: {out_file}")
 
-    # create_video_from_images(image_directory, output_video, fps)
 
-    print("Video processing complete.")
+def main(args):
+    in_file = args.filename
+    num_workers = args.num_workers
+    out_file = args.output_file
+
+    cap, max_frames, orig_width, orig_height, fps = initialize_video_capture(in_file)
+    if not cap:
+        return
+
+    ver = abs(orig_width - args.desired_width)
+    hor = abs(orig_height - args.desired_height)
+
+    logging.info(f"Original dimensions: {orig_width}x{orig_height}, FPS: {fps}")
+    logging.info(f"Resizing to: {args.desired_width}x{args.desired_height}")
+
+    frames = extract_frames(cap, max_frames)
+    if not frames:
+        return
+
+    out_frames = process_video(
+        frames, max_frames, orig_width, orig_height, ver, hor, num_workers
+    )
+
+    # out_file = in_file.split(".")[0] + "_result.avi"
+    save_output_video(out_frames, out_file, fps, orig_width, orig_height, ver, hor)
+    logging.info("Video processing complete.")
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="Reduce video dimensions using seam carving based on sequential frames."
+    )
+    parser.add_argument(
+        "-f", "--filename", type=str, help="Path to the input video file."
+    )
+    parser.add_argument(
+        "-dh", "--desired_height", type=int, help="Desired height of the output video."
+    )
+    parser.add_argument(
+        "-dw", "--desired_width", type=int, help="Desired width of the output video."
+    )
+    parser.add_argument(
+        "-nw",
+        "--num_workers",
+        type=int,
+        help="Number of workers for parallel processing.",
+    )
+    parser.add_argument(
+        "-o", "--output_file", type=str, help="Path to the output video file."
+    )
+
+    args = parser.parse_args()
+    main(args)

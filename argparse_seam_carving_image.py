@@ -38,7 +38,7 @@ def calculate_energy(I):
     return energy
 
 
-def remove_vertical(I, Xd):
+def remove_vertical_img(I, Xd):
     # global gray, energy, dp, dir
     X0 = I.shape[1]
     X = X0
@@ -101,10 +101,10 @@ def remove_vertical(I, Xd):
     return I
 
 
-def remove_horizontal(I, Yd):
+def remove_horizontal_img(I, Yd):
     logging.info(f"Removing horizontal seam {I.shape[0] - Yd}")
     I = cv2.transpose(I)
-    I = remove_vertical(I, Yd)
+    I = remove_vertical_img(I, Yd)
     I = cv2.transpose(I)
     return I
 
@@ -248,12 +248,12 @@ def main():
 
     dupImg = img.copy()
     if desired_h <= orig_h:
-        dupImg = remove_horizontal(dupImg, desired_h)
+        dupImg = remove_horizontal_img(dupImg, desired_h)
     else:
         dupImg = add_horizontal(dupImg, desired_h)
 
     if desired_w <= orig_w:
-        dupImg = remove_vertical(dupImg, desired_w)
+        dupImg = remove_vertical_img(dupImg, desired_w)
     else:
         dupImg = add_vertical(dupImg, desired_w)
 

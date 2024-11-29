@@ -8,8 +8,8 @@ from icecream import ic
 
 
 from argparse_seam_carving_image import (
-    remove_horizontal,
-    remove_vertical,
+    remove_horizontal_img,
+    remove_vertical_img,
     add_horizontal,
     add_vertical,
 )
@@ -48,12 +48,12 @@ if uploaded_file is not None:
 
     if st.button("Resize Image"):
         if desired_height <= img_array.shape[0]:
-            img_array = remove_horizontal(img_array, desired_height)
+            img_array = remove_horizontal_img(img_array, desired_height)
         else:
             img_array = add_horizontal(img_array, desired_height)
 
         if desired_width <= img_array.shape[1]:
-            img_array = remove_vertical(img_array, desired_width)
+            img_array = remove_vertical_img(img_array, desired_width)
         else:
             img_array = add_vertical(img_array, desired_width)
 
