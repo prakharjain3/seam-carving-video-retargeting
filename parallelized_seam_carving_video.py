@@ -1,12 +1,12 @@
 import cv2
 import numpy as np
-import concurrent.futures
+from concurrent.futures import ProcessPoolExecutor
 import os
 from glob import glob
 import networkx as nx
 import argparse
-from icecream import ic
 import logging
+import sys
 
 logging.basicConfig(
     filename="seam_carving.log",
@@ -18,7 +18,7 @@ logging.basicConfig(
 
 def usage():
     print(
-        "Usage:python3 parallelized_seam_carving_video.py -f=<filename> -dh=<desired height> -dw=<desired width> -nw=<num workers> -o=<output file>"
+        "Usage:python3 parallelized_seam_carving_video.py <filename> <desired height> <desired width> <num workers> <output file>"
     )
 
 
@@ -223,7 +223,8 @@ def extract_frames(cap, max_frames):
 
 
 def process_video(frames, max_frames, orig_width, orig_height, ver, hor, num_workers):
-    with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
+
+    with ProcessPoolExecutor(max_workers=num_workers) as executor:
         args = [(frames, i, max_frames, ver, hor) for i in range(max_frames)]
         out_frames = list(executor.map(process_frame, args))
 
@@ -246,30 +247,34 @@ def save_output_video(out_frames, out_file, fps, orig_width, orig_height, ver, h
 
 
 def main(args):
-    in_file = args.filename
-    num_workers = args.num_workers
-    out_file = args.output_file
-
-    cap, max_frames, orig_width, orig_height, fps = initialize_video_capture(in_file)
+    cap, max_frames, orig_width, orig_height, fps = initialize_video_capture(
+        args.filename
+    )
     if not cap:
-        return
-
-    ver = abs(orig_width - args.desired_width)
-    hor = abs(orig_height - args.desired_height)
-
-    logging.info(f"Original dimensions: {orig_width}x{orig_height}, FPS: {fps}")
-    logging.info(f"Resizing to: {args.desired_width}x{args.desired_height}")
+        sys.exit(-1)
 
     frames = extract_frames(cap, max_frames)
     if not frames:
-        return
+        sys.exit(-1)
+
+    ver = abs(orig_width - args.desired_width)
+    hor = abs(orig_height - args.desired_height)
+    logging.info(f"Original dimensions: {orig_width}x{orig_height}, FPS: {fps}")
+    logging.info(f"Resizing to: {args.desired_width}x{args.desired_height}")
 
     out_frames = process_video(
-        frames, max_frames, orig_width, orig_height, ver, hor, num_workers
+        frames, max_frames, orig_width, orig_height, ver, hor, args.num_workers
     )
-
     # out_file = in_file.split(".")[0] + "_result.avi"
-    save_output_video(out_frames, out_file, fps, orig_width, orig_height, ver, hor)
+    save_output_video(
+        out_frames,
+        args.output_file,
+        fps,
+        orig_width,
+        orig_height,
+        ver,
+        hor,
+    )
     logging.info("Video processing complete.")
 
 

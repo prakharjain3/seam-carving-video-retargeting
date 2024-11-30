@@ -123,7 +123,6 @@ elif option == "Video":
             with open(input_path, "wb") as f:
                 f.write(uploaded_file.getvalue())
 
-            # Check and convert non-MP4 files to H.264 MP4 format
             h264_input_path = input_path
             if not filename.endswith(".mp4"):
                 h264_input_path = os.path.join(temp_dir, "input_converted.mp4")
@@ -133,7 +132,6 @@ elif option == "Video":
             if h264_input_path is None:
                 st.error("Error converting input video to H.264 format.")
 
-            # Use OpenCV to read video properties
             cap = cv2.VideoCapture(h264_input_path)
 
             if not cap.isOpened():
@@ -143,7 +141,7 @@ elif option == "Video":
                 orig_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
                 fps = cap.get(cv2.CAP_PROP_FPS)
 
-                st.video(h264_input_path)  # Display the H.264 input video
+                st.video(h264_input_path)
 
                 st.write(f"Original Video Dimensions: {orig_width}x{orig_height}")
                 st.write(f"FPS: {fps}")
