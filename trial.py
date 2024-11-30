@@ -18,6 +18,6 @@ def convert_mov_to_h264(input_file, output_file):
 
 
 if __name__ == "__main__":
-    input_file = "Videos/4.mov"  # Replace with your .mov file path
-    output_file = "Videos/4.mp4"  # Replace with your desired output path
+    input_file = "results/1_result_edge.avi"  # Replace with your .mov file path
+    output_file = "results/1_result_edge.mp4"  # Replace with your desired output path
     convert_mov_to_h264(input_file, output_file)
