@@ -7,6 +7,7 @@ import networkx as nx
 import argparse
 import logging
 import sys
+import maxflow
 
 logging.basicConfig(
     filename="seam_carving.log",
@@ -56,58 +57,145 @@ def remove_seam_gray(gray_image, seam):
     return reduced_image
 
 
-def find_seam(gray_img1, gray_img2, gray_img3, gray_img4, gray_img5):
-    rows, cols = gray_img1.shape
+# def find_seam(gray_img1, gray_img2, gray_img3, gray_img4, gray_img5):
+#     rows, cols = gray_img1.shape
 
-    # Constants
-    a1, a2, a3, a4, a5 = 0.2, 0.2, 0.2, 0.2, 0.2
-    inf = float("inf")
+#     # Constants
+#     a1, a2, a3, a4, a5 = 0.2, 0.2, 0.2, 0.2, 0.2
+#     inf = float("inf")
 
-    # Energy map combining the inputs
-    energy = (
-        a1 * gray_img1
-        + a2 * gray_img2
-        + a3 * gray_img3
-        + a4 * gray_img4
-        + a5 * gray_img5
+#     # Energy map combining the inputs
+#     energy = (
+#         a1 * gray_img1
+#         + a2 * gray_img2
+#         + a3 * gray_img3
+#         + a4 * gray_img4
+#         + a5 * gray_img5
+#     )
+
+#     # Create a directed graph
+#     G = nx.DiGraph()
+
+#     # Adding nodes and edges
+#     for i in range(rows):
+#         for j in range(cols):
+#             node = (i, j)
+
+#             # Add edges to the next row
+#             if i < rows - 1:
+#                 # Down
+#                 G.add_edge(node, (i + 1, j), weight=energy[i, j])
+#                 # Down-left
+#                 if j > 0:
+#                     G.add_edge(node, (i + 1, j - 1), weight=energy[i, j])
+#                 # Down-right
+#                 if j < cols - 1:
+#                     G.add_edge(node, (i + 1, j + 1), weight=energy[i, j])
+
+#             # Add source and sink connections
+#             if i == 0:
+#                 G.add_edge("source", node, weight=energy[i, j])
+#             if i == rows - 1:
+#                 G.add_edge(node, "sink", weight=energy[i, j])
+
+#     # Compute the max flow (min cut) between source and sink
+#     flow_value, partition = nx.minimum_cut(G, "source", "sink", capacity="weight")
+#     reachable, non_reachable = partition
+
+#     # Extract the seam from the partition
+#     seam = np.zeros(rows, dtype=int)
+#     for i in range(rows):
+#         for j in range(cols):
+#             if (i, j) in reachable:
+#                 seam[i] = j
+#                 break
+
+#     return seam
+
+
+def find_seam(grayImg1, grayImg2, grayImg3, grayImg4, grayImg5):
+
+    rows, cols = grayImg1.shape
+    inf = 100000
+    seam = np.zeros(rows, dtype=int)
+    weights = np.array([0.2, 0.2, 0.2, 0.2, 0.2])
+
+    # Ensure pixel values are cast to unsigned integer type
+    grayImgs = np.stack(
+        [
+            grayImg1.astype(np.uint8),
+            grayImg2.astype(np.uint8),
+            grayImg3.astype(np.uint8),
+            grayImg4.astype(np.uint8),
+            grayImg5.astype(np.uint8),
+        ],
+        axis=-1,
     )
 
-    # Create a directed graph
-    G = nx.DiGraph()
+    # Create the graph
+    g = maxflow.Graph[int](
+        rows * cols, (rows - 1) * cols + (cols - 1) * rows + 2 * (rows - 1) * (cols - 1)
+    )
+    nodes = g.add_nodes(rows * cols)
 
-    # Adding nodes and edges
+    # Add edges to the graph
     for i in range(rows):
         for j in range(cols):
-            node = (i, j)
+            node_id = i * cols + j
 
-            # Add edges to the next row
+            # Add terminal edges
+            if j == 0:
+                g.add_tedge(node_id, inf, 0)
+            elif j == cols - 1:
+                g.add_tedge(node_id, 0, inf)
+
+            # Add intra-row edges (left-to-right)
+            if j < cols - 1:
+                next_col_values = grayImgs[i, j + 1]
+                if j == 0:
+                    LR = np.sum(next_col_values * weights)
+                else:
+                    prev_col_values = grayImgs[i, j - 1]
+                    LR = np.sum(np.abs(next_col_values - prev_col_values) * weights)
+                g.add_edge(node_id, node_id + 1, int(LR), inf)
+
+            # Add inter-row edges (top-to-bottom)
             if i < rows - 1:
-                # Down
-                G.add_edge(node, (i + 1, j), weight=energy[i, j])
-                # Down-left
-                if j > 0:
-                    G.add_edge(node, (i + 1, j - 1), weight=energy[i, j])
-                # Down-right
-                if j < cols - 1:
-                    G.add_edge(node, (i + 1, j + 1), weight=energy[i, j])
+                if j == 0:
+                    posLU = np.sum(grayImgs[i, j] * weights)
+                    negLU = np.sum(grayImgs[i + 1, j] * weights)
+                else:
+                    LU_curr = grayImgs[i, j]
+                    LU_prev_col = grayImgs[i + 1, j - 1]
+                    posLU = np.sum(np.abs(LU_curr - LU_prev_col) * weights)
 
-            # Add source and sink connections
-            if i == 0:
-                G.add_edge("source", node, weight=energy[i, j])
-            if i == rows - 1:
-                G.add_edge(node, "sink", weight=energy[i, j])
+                    LU_next_row = grayImgs[i + 1, j]
+                    LU_prev_curr = grayImgs[i, j - 1]
+                    negLU = np.sum(np.abs(LU_next_row - LU_prev_curr) * weights)
 
-    # Compute the max flow (min cut) between source and sink
-    flow_value, partition = nx.minimum_cut(G, "source", "sink", capacity="weight")
-    reachable, non_reachable = partition
+                g.add_edge(node_id, node_id + cols, int(negLU), int(posLU))
 
-    # Extract the seam from the partition
-    seam = np.zeros(rows, dtype=int)
+            # Add diagonal edges
+            if i != 0 and j != 0:
+                g.add_edge(node_id, (i - 1) * cols + j - 1, inf, 0)
+            if i != rows - 1 and j != 0:
+                g.add_edge(node_id, (i + 1) * cols + j - 1, inf, 0)
+
+    # Perform max flow
+    g.maxflow()
+
+    # Extract seam
+    segments = np.array([g.get_segment(i) for i in range(rows * cols)])
+    segments = segments.reshape(rows, cols)
+
     for i in range(rows):
-        for j in range(cols):
-            if (i, j) in reachable:
-                seam[i] = j
-                break
+        sink_nodes = np.where(segments[i] == 1)[0]
+        if sink_nodes.size > 0:
+            seam[i] = (
+                sink_nodes[0] - 1 if sink_nodes[0] > 0 else 0
+            )  # Adjust indexing to match C++ logic
+        else:
+            seam[i] = cols - 1  # Fallback for entire row in source
 
     return seam
 
